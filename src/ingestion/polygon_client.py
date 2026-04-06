@@ -35,6 +35,11 @@ class PolymarketClient:
 
     async def listen_for_trades(self):
         """Polls for new block events via async websockets."""
+        try:
+            await self.w3.provider.connect()
+        except Exception as e:
+            logger.error(f"Provider connection error: {e}")
+            
         if not await self.w3.is_connected():
             logger.error("Failed to connect to Polygon WSS")
             return
