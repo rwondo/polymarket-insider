@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: polymarket-api
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn src.api.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: POLYGON_RPC_URL
+        sync: false
+      - key: POLYGON_WSS_URL
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+  - type: worker
+    name: polymarket-ingestion
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: POLYGON_RPC_URL
+        sync: false
+      - key: POLYGON_WSS_URL
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"

@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: polymarket
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: polymarket_insider
+    ports:
+      - "127.0.0.1:5432:5432" # Restrict to localhost for security
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polymarket -d polymarket_insider"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data_prod:/data
+
+  worker:
+    build: .
+    restart: always
+    command: python main.py
+    environment:
+      - DATABASE_URL=postgresql://polymarket:${DB_PASSWORD:-password}@db:5432/polymarket_insider
+      - POLYGON_RPC_URL=${POLYGON_RPC_URL}
+      - POLYGON_WSS_URL=${POLYGON_WSS_URL}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    restart: always
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://polymarket:${DB_PASSWORD:-password}@db:5432/polymarket_insider
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:
