@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql://polymarket:password@localhost:5432/polymarket_insider"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://polymarket:password@localhost:5432/polymarket_insider")
     
     # Blockchain
     POLYGON_RPC_URL: str = os.getenv("POLYGON_RPC_URL", "https://polygon-rpc.com")
