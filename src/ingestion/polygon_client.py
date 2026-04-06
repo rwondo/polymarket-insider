@@ -2,7 +2,8 @@ import json
 import time
 import logging
 import asyncio
-from web3 import AsyncWeb3, WebsocketProvider
+from web3 import AsyncWeb3
+from web3.providers import WebsocketProviderV2
 from src.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class PolymarketClient:
     def __init__(self, queue: asyncio.Queue):
         # We use AsyncWeb3 with WebSockets for true real-time, low-latency ingestion
-        self.w3 = AsyncWeb3(WebsocketProvider(settings.POLYGON_WSS_URL))
+        self.w3 = AsyncWeb3(WebsocketProviderV2(settings.POLYGON_WSS_URL))
         self.ctf_address = settings.POLYMARKET_CTF_ADDRESS
         self.queue = queue
         
