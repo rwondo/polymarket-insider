@@ -19,5 +19,8 @@ COPY . .
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Command will be overridden in docker-compose.prod.yml for worker vs api
-CMD ["python", "main.py"]
+# Make the start script executable
+RUN chmod +x start.sh
+
+# Command to run both the API and the Worker
+CMD ["./start.sh"]
