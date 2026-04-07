@@ -9,7 +9,7 @@ from src.db.models import Trade, WalletStat, Anomaly
 from src.ingestion.polygon_client import PolymarketClient
 from src.features.feature_engineer import FeatureEngineer
 from src.models.anomaly_detector import AnomalyDetector
-from src.notifier.webhook import send_alert
+from src.notifier.webhook import send_alert, send_trade_log
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ async def process_queue(queue: asyncio.Queue, db: Session, feature_eng: FeatureE
                 
             features = feature_eng.process_new_trade(trade_data, current_stats_dict)
             score = detector.calculate_score(features)
+            
+            # Send all trades log
+            send_trade_log(trade_data, score)
             
             new_trade = Trade(
                 transaction_hash=trade_data['transaction_hash'],

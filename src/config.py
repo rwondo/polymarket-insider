@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # Notifications
     WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "") # Discord or Telegram
+    ALL_TRADES_WEBHOOK_URL: str = os.getenv("ALL_TRADES_WEBHOOK_URL", "") # Discord webhook for all trades
 
     class Config:
         env_file = ".env"
