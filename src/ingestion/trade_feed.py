@@ -38,9 +38,7 @@ def parse_trade(row: dict) -> dict:
 class TradeFeed:
     """Polls Polymarket's public trades API and queues the trades it hasn't seen yet."""
 
-    def __init__(
-        self, queue: asyncio.Queue, url: str | None = None, interval: float | None = None
-    ):
+    def __init__(self, queue: asyncio.Queue, url: str | None = None, interval: float | None = None):
         self.queue = queue
         self.url = url or settings.TRADES_API_URL
         self.interval = interval or settings.POLL_INTERVAL_SECONDS
