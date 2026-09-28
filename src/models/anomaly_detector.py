@@ -1,64 +1,63 @@
 import numpy as np
 from sklearn.ensemble import IsolationForest
 
+from src.config import settings
+from src.features.feature_engineer import ML_FEATURES
+
+# Score components (0-100 in total)
+NEW_WALLET_POINTS = 40  # first trade we see from a wallet is above LARGE_TRADE_USD
+Z_SCORE_CUTOFF = 3.0
+Z_SCORE_POINTS = 30  # trade is more than 3 std devs above the wallet's average
+ML_MAX_POINTS = 30  # Isolation Forest says outlier
+ML_POINTS_PER_UNIT = 150  # a decision score of -0.2 or lower earns the full 30 points
+
+
+def feature_vector(features: dict) -> list[float]:
+    return [float(features[name]) for name in ML_FEATURES]
+
+
 class AnomalyDetector:
-    def __init__(self):
-        # Isolation Forest is great for multidimensional outliers
-        self.model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-        self.is_trained = False
+    def __init__(self, large_trade_usd: float | None = None):
+        self.large_trade_usd = large_trade_usd or settings.LARGE_TRADE_USD
+        self.model: IsolationForest | None = None
+        self.trained_on = 0
 
-    def train_initial_model(self, historical_features_df):
-        """Train on a batch of historical trades to establish baselines"""
-        if historical_features_df.empty:
-            return
-            
-        features = historical_features_df[['trade_size', 'wallet_age_days', 'total_trades', 'size_z_score']]
-        self.model.fit(features)
-        self.is_trained = True
+    @property
+    def is_trained(self) -> bool:
+        return self.model is not None
 
-    def calculate_score(self, features: dict) -> float:
-        """
-        Calculate an 'Insider Likelihood Score' from 0-100.
-        Heuristics + ML Anomaly Score.
-        """
+    def train(self, rows) -> None:
+        """Fit a fresh Isolation Forest on rows of ML_FEATURES, then swap it in."""
+        X = np.asarray(rows, dtype=float)
+        model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+        model.fit(X)
+        # One assignment, so scoring never sees a half-trained model
+        self.model = model
+        self.trained_on = len(X)
+
+    def score(self, features: dict) -> tuple[float, list[str]]:
+        """Return an unusualness score from 0 to 100 and the reasons behind it."""
         score = 0.0
-        
-        # 1. Heuristic: Brand new wallet making massive trade (> $10k)
-        if features['is_new_wallet'] and features['trade_size'] > 10000:
-            score += 40
-            
-        # 2. Heuristic: Massive deviation from their norm (z-score > 3)
-        if features['size_z_score'] > 3.0:
-            score += min(30, features['size_z_score'] * 10)
-            
-        # 3. ML Scoring (Isolation Forest)
-        if self.is_trained:
-            # Format explicitly for scikit-learn
-            X = np.array([[
-                features['trade_size'], 
-                features['wallet_age_days'], 
-                features['total_trades'], 
-                features['size_z_score']
-            ]])
-            
-            # decision_function returns [-0.5, 0.5] roughly. Lower is more anomalous.
-            anomaly_score = self.model.decision_function(X)[0]
-            
-            # Map [-0.2, 0.2] to [0, 30] bonus points
-            if anomaly_score < 0:
-                ml_penalty = min(30, abs(anomaly_score) * 150)
-                score += ml_penalty
-                
-        # Cap at 100
-        return min(100.0, score)
-
-    def generate_explanation(self, features: dict, score: float) -> str:
         reasons = []
-        if features['is_new_wallet'] and features['trade_size'] > 10000:
-            reasons.append("New wallet with massive initial trade.")
-        if features['size_z_score'] > 3.0:
-            reasons.append(f"Trade size is {features['size_z_score']:.1f} standard deviations above wallet's average.")
-        if score >= 80:
-            reasons.append("High statistical anomaly registered by ML model.")
-            
-        return " | ".join(reasons) if reasons else "Normal trade behavior."
+
+        if features["is_new_wallet"] and features["trade_size"] > self.large_trade_usd:
+            score += NEW_WALLET_POINTS
+            reasons.append(f"First trade seen from this wallet is ${features['trade_size']:,.0f}.")
+
+        z_score = features["size_z_score"]
+        if z_score > Z_SCORE_CUTOFF:
+            score += Z_SCORE_POINTS
+            reasons.append(
+                f"Trade is {z_score:.1f} standard deviations above this wallet's average size."
+            )
+
+        model = self.model
+        if model is not None:
+            # decision_function < 0: the forest isolates this trade in fewer splits than
+            # the contamination cutoff allows, i.e. it looks like an outlier
+            decision = model.decision_function(np.array([feature_vector(features)]))[0]
+            if decision < 0:
+                score += min(ML_MAX_POINTS, -decision * ML_POINTS_PER_UNIT)
+                reasons.append(f"Isolation Forest outlier (decision score {decision:.3f}).")
+
+        return min(100.0, score), reasons
