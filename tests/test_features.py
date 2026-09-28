@@ -50,6 +50,13 @@ def test_outlier_is_measured_against_previous_trades():
     assert features["size_z_score"] == pytest.approx(90.0)
 
 
+def test_identical_previous_trades_do_not_explode_the_z_score():
+    # Seen in a live run: two "$500" trades that differ only by float noise, then a
+    # $4,808 trade that scored a z of ~85 billion before the standard deviation floor
+    _, features = run_wallet([499.99999995166667, 500.00000002372093, 4_807.83])
+    assert features["size_z_score"] == pytest.approx(4_307.83)
+
+
 def test_days_since_first_seen_accepts_naive_datetimes():
     # SQLite hands back naive datetimes; they are treated as UTC
     first_seen = datetime(2026, 1, 1)

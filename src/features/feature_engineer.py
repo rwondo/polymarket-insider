@@ -4,6 +4,10 @@ from datetime import UTC, datetime
 # Features the Isolation Forest is trained on, in column order
 ML_FEATURES = ("trade_size", "days_since_first_seen", "total_trades", "size_z_score")
 
+# Floor for the standard deviation: two $500 trades can come out of shares x price as
+# $499.99999995 and $500.00000002, leaving a variance of ~1e-15 that made z-scores explode
+MIN_STD_USD = 1.0
+
 
 def _as_utc(dt: datetime) -> datetime:
     # SQLite returns naive datetimes; treat them as UTC
@@ -32,9 +36,8 @@ def compute_features(trade: dict, wallet: dict | None) -> dict:
     # inflate the standard deviation it is measured against
     z_score = 0.0
     if n_prev >= 2:
-        variance = m2 / (n_prev - 1)
-        if variance > 0:
-            z_score = (size - mean) / math.sqrt(variance)
+        std = max(math.sqrt(m2 / (n_prev - 1)), MIN_STD_USD)
+        z_score = (size - mean) / std
 
     # Welford's online algorithm: update mean and M2 (sum of squared deviations)
     # without storing the wallet's past trades
