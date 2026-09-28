@@ -114,7 +114,7 @@ A `Dockerfile` and `docker-compose.yml` (PostgreSQL plus the app) are included. 
 
 ## Results
 
-**Method.** One run with the default settings (trades of $500+, flag threshold 60, SQLite) on 28 September 2026 from 20:24 to 20:50 UTC. It was planned for an hour but stopped after 26 minutes when the machine ran low on memory. The numbers come from `scripts/run_stats.py`. Trades timestamped before the start came from the startup backfill; the rest were picked up live.
+**Method.** One run with the default settings (trades of $500+, flag threshold 60, SQLite) on 28 September 2026 from 20:24 to 20:50 UTC. It was planned for an hour but stopped after 26 minutes when the machine ran low on memory. The numbers come from `uv run python scripts/run_stats.py --since "2026-09-28 20:24:31"`. Trades timestamped before the start came from the startup backfill; the rest were picked up live.
 
 **What happened**
 
@@ -134,7 +134,7 @@ A `Dockerfile` and `docker-compose.yml` (PostgreSQL plus the app) are included. 
 ## Limitations
 
 - **No ground truth.** Nobody publishes a list of confirmed insider trades, so there is no way to measure precision or recall. A flag means "statistically unusual", not "insider".
-- **"New wallet" means new to this instance**, not new to Polymarket. The startup backfill softens this, but a wallet whose last trade was more than about six hours ago still looks new.
+- **"New wallet" means new to this database**, not new to Polymarket: any wallet whose last trade of $500+ happened before the backfill window (about six hours before the first start) looks new. The backfill softens this cold-start effect but does not remove it.
 - **Only trades of $500 or more** are seen, so a wallet's history and z-score reflect its large trades only.
 - **A few minutes behind real time**, because the API is cached for five minutes.
 - **Hand-picked thresholds.** The point values, the $10,000 cut-off and the flag threshold are judgement calls, not tuned values.
@@ -155,6 +155,7 @@ src/
   db/                            SQLAlchemy engine and models
   notifier/webhook.py            Discord alerts
   api/main.py                    FastAPI endpoints
+scripts/run_stats.py             summary of a run (used for the Results section)
 tests/                           offline tests for every stage
 ```
 
