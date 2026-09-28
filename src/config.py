@@ -7,9 +7,13 @@ class Settings(BaseSettings):
     # Database (SQLite by default, Postgres via docker-compose)
     DATABASE_URL: str = "sqlite:///polymarket_insider.db"
 
-    # Ingestion: Polymarket's public trades API, no key needed
+    # Ingestion: Polymarket's public trades API, no key needed. The API is cached for
+    # 5 minutes, so we only ask for trades above MIN_TRADE_USD: one page of those covers
+    # far more than 5 minutes, so no trades are missed between refreshes.
     TRADES_API_URL: str = "https://data-api.polymarket.com/trades"
-    POLL_INTERVAL_SECONDS: float = 5.0
+    MIN_TRADE_USD: float = 500.0
+    POLL_INTERVAL_SECONDS: float = 60.0
+    BACKFILL_TRADES: int = 5_000  # recent trades loaded on startup to warm up wallet stats
 
     # Scoring
     ANOMALY_THRESHOLD: float = 60.0

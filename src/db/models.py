@@ -18,6 +18,7 @@ class Trade(Base):
     price = Column(Float)
     size_usd = Column(Float)
     timestamp = Column(DateTime(timezone=True), index=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Features at the time of the trade; the Isolation Forest is retrained on these
     days_since_first_seen = Column(Float)

@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 
 from src.ingestion.trade_feed import TradeFeed, parse_trade
@@ -58,3 +59,40 @@ def test_malformed_rows_are_skipped():
     del bad["price"]
     trades = feed().new_trades([bad, api_row("0xgood", 200)])
     assert [t["transaction_hash"] for t in trades] == ["0xgood"]
+
+
+def run_backfill(f, pages):
+    """Run TradeFeed.backfill against a fake API that serves `pages` by offset."""
+    calls = []
+
+    def handler(request):
+        calls.append(dict(request.url.params))
+        return httpx.Response(200, json=pages.get(int(request.url.params["offset"]), []))
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await f.backfill(client)
+
+    asyncio.run(go())
+    return calls
+
+
+def test_backfill_pages_with_cash_filter_and_queues_oldest_first():
+    f = TradeFeed(asyncio.Queue(), url="http://example.invalid", min_usd=500, backfill=5_000)
+    pages = {
+        0: [api_row(f"0x{i}", 1_000 - i) for i in range(500)],
+        500: [api_row("0xoldest", 1)],
+    }
+    calls = run_backfill(f, pages)
+
+    assert calls[0]["filterType"] == "CASH"
+    assert float(calls[0]["filterAmount"]) == 500
+    assert [c["offset"] for c in calls] == ["0", "500"]  # stops at the first short page
+    assert f.queue.qsize() == 501
+    assert f.queue.get_nowait()["transaction_hash"] == "0xoldest"
+
+
+def test_backfill_respects_limit():
+    f = TradeFeed(asyncio.Queue(), url="http://example.invalid", backfill=500)
+    calls = run_backfill(f, {0: [api_row(f"0x{i}", i) for i in range(500)]})
+    assert len(calls) == 1
