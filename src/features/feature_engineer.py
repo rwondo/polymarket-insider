@@ -1,62 +1,55 @@
-import pandas as pd
-import numpy as np
-from datetime import datetime
 import math
+from datetime import UTC, datetime
 
-class FeatureEngineer:
-    def __init__(self, db_session):
-        self.db = db_session
+# Features the Isolation Forest is trained on, in column order
+ML_FEATURES = ("trade_size", "days_since_first_seen", "total_trades", "size_z_score")
 
-    def process_new_trade(self, trade_data: dict, current_wallet_stats: dict):
-        """
-        Calculate ML features using Welford's Algorithm for running variance.
-        """
-        size = trade_data['size_usd']
-        wallet = trade_data['wallet_address']
-        
-        # 1. Wallet Features
-        is_new_wallet = current_wallet_stats is None
-        total_trades = 1 if is_new_wallet else current_wallet_stats['total_trades'] + 1
-        
-        if is_new_wallet:
-            avg_size = size
-            new_m2 = 0.0
-            z_score = 0.0  # Can't calculate z-score on first trade
-            wallet_age_days = 0
-        else:
-            prev_avg = current_wallet_stats['avg_trade_size']
-            prev_m2 = current_wallet_stats.get('m2', 0.0)
-            
-            # Welford's Online Algorithm for Variance
-            delta = size - prev_avg
-            avg_size = prev_avg + delta / total_trades
-            delta2 = size - avg_size
-            new_m2 = prev_m2 + delta * delta2
-            
-            # Calculate Standard Deviation (Sample Variance)
-            variance = new_m2 / (total_trades - 1) if total_trades > 1 else 0
-            
-            # Prevent zero-division for std_dev in very fresh/stable wallets
-            if variance > 0:
-                std_dev = math.sqrt(variance)
-            else:
-                std_dev = (prev_avg / 2) if prev_avg > 0 else 1.0
-                
-            z_score = delta / std_dev if std_dev > 0 else 0.0
-            
-            first_trade = current_wallet_stats['first_trade_at']
-            wallet_age_days = (datetime.utcnow() - first_trade.replace(tzinfo=None)).days
 
-        # 2. Trade/Market Features
-        
-        features = {
-            "trade_size": size,
-            "wallet_age_days": wallet_age_days,
-            "total_trades": total_trades,
-            "avg_trade_size": avg_size,
-            "m2": new_m2,
-            "size_z_score": z_score,
-            "is_new_wallet": int(is_new_wallet)
-        }
-        
-        return features
+def _as_utc(dt: datetime) -> datetime:
+    # SQLite returns naive datetimes; treat them as UTC
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+def compute_features(trade: dict, wallet: dict | None) -> dict:
+    """
+    Build the features for one trade and the wallet's updated running stats.
+
+    `wallet` holds the stats from the wallet's previous trades (None for a wallet this
+    instance hasn't seen): first_seen_at, total_trades, avg_trade_size, m2.
+    """
+    size = trade["size_usd"]
+    trade_time = _as_utc(trade["timestamp"])
+
+    if wallet is None:
+        n_prev, mean, m2, first_seen = 0, 0.0, 0.0, trade_time
+    else:
+        n_prev = wallet["total_trades"]
+        mean = wallet["avg_trade_size"]
+        m2 = wallet["m2"]
+        first_seen = _as_utc(wallet["first_seen_at"])
+
+    # z-score against the wallet's previous trades only, so an outlier can't
+    # inflate the standard deviation it is measured against
+    z_score = 0.0
+    if n_prev >= 2:
+        variance = m2 / (n_prev - 1)
+        if variance > 0:
+            z_score = (size - mean) / math.sqrt(variance)
+
+    # Welford's online algorithm: update mean and M2 (sum of squared deviations)
+    # without storing the wallet's past trades
+    n = n_prev + 1
+    delta = size - mean
+    mean += delta / n
+    m2 += delta * (size - mean)
+
+    return {
+        "trade_size": size,
+        "days_since_first_seen": max(0.0, (trade_time - first_seen).total_seconds() / 86_400),
+        "total_trades": n,
+        "size_z_score": z_score,
+        "is_new_wallet": wallet is None,
+        "first_seen_at": first_seen,
+        "avg_trade_size": mean,
+        "m2": m2,
+    }
