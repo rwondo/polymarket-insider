@@ -1,46 +1,58 @@
-from fastapi import FastAPI, Depends
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Query
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import List
 
-from src.db.database import get_db, engine, Base
-from src.db.models import Anomaly, Trade
+from src.db.database import Base, engine, get_db
+from src.db.models import Anomaly
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Polymarket Insider Detection API")
+app = FastAPI(title="Polymarket Insider API")
+
+DbSession = Annotated[Session, Depends(get_db)]
+Limit = Annotated[int, Query(ge=1, le=100)]
+
 
 class AnomalyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     wallet_address: str
     market_id: str
+    market_title: str | None
+    timestamp: datetime
     score: float
     explanation: str
 
-    class Config:
-        from_attributes = True
+
+class FlaggedWallet(BaseModel):
+    wallet: str
+    avg_score: float
+    flag_count: int
+
 
 @app.get("/")
 def read_root():
-    return {"status": "System Online", "service": "Polymarket Insider Detection"}
+    return {"status": "ok", "service": "polymarket-insider"}
 
-@app.get("/api/anomalies", response_model=List[AnomalyResponse])
-def get_recent_anomalies(limit: int = 10, db: Session = Depends(get_db)):
-    anomalies = db.query(Anomaly).order_by(Anomaly.timestamp.desc()).limit(limit).all()
-    return anomalies
 
-@app.get("/api/wallets/top")
-def get_top_flagged_wallets(db: Session = Depends(get_db)):
-    """Returns wallets with the highest average anomaly scores."""
-    from sqlalchemy.sql import func
-    
-    results = db.query(
-        Anomaly.wallet_address, 
-        func.avg(Anomaly.score).label('avg_score'),
-        func.count(Anomaly.id).label('flag_count')
-    ).group_by(Anomaly.wallet_address)\
-     .having(func.count(Anomaly.id) > 0)\
-     .order_by(func.avg(Anomaly.score).desc())\
-     .limit(10).all()
-     
-    return [{"wallet": r[0], "avg_score": r[1], "flag_count": r[2]} for r in results]
+@app.get("/api/anomalies", response_model=list[AnomalyResponse])
+def get_recent_anomalies(db: DbSession, limit: Limit = 10):
+    """Most recent flagged trades."""
+    return db.scalars(select(Anomaly).order_by(Anomaly.timestamp.desc()).limit(limit)).all()
+
+
+@app.get("/api/wallets/top", response_model=list[FlaggedWallet])
+def get_top_flagged_wallets(db: DbSession, limit: Limit = 10):
+    """Wallets with the highest average anomaly score."""
+    avg_score = func.avg(Anomaly.score)
+    rows = db.execute(
+        select(Anomaly.wallet_address, avg_score, func.count(Anomaly.id))
+        .group_by(Anomaly.wallet_address)
+        .order_by(avg_score.desc())
+        .limit(limit)
+    ).all()
+    return [FlaggedWallet(wallet=w, avg_score=s, flag_count=c) for w, s, c in rows]
