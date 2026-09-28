@@ -96,3 +96,9 @@ def test_backfill_respects_limit():
     f = TradeFeed(asyncio.Queue(), url="http://example.invalid", backfill=500)
     calls = run_backfill(f, {0: [api_row(f"0x{i}", i) for i in range(500)]})
     assert len(calls) == 1
+
+
+def test_duplicates_within_one_batch_are_dropped():
+    # Happens when the API cache refreshes between backfill pages and rows shift
+    trades = feed().new_trades([api_row("0x2", 200), api_row("0x1", 100), api_row("0x1", 100)])
+    assert [t["transaction_hash"] for t in trades] == ["0x1", "0x2"]

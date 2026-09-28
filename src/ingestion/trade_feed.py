@@ -76,6 +76,9 @@ class TradeFeed:
             except (KeyError, TypeError, ValueError):
                 logger.debug("Skipping malformed trade row: %s", row)
                 continue
+            # Backfill pages can overlap if the API cache refreshes while paging
+            if trade["trade_key"] in self._seen:
+                continue
             self._remember(trade["trade_key"])
             trades.append(trade)
         return trades
