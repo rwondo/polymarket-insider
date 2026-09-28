@@ -1,23 +1,27 @@
-import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://polymarket:password@localhost:5432/polymarket_insider")
-    
-    # Blockchain
-    POLYGON_RPC_URL: str = os.getenv("POLYGON_RPC_URL", "https://polygon-rpc.com")
-    POLYGON_WSS_URL: str = os.getenv("POLYGON_WSS_URL", "wss://polygon-rpc.com/ws")
-    POLYMARKET_CTF_ADDRESS: str = "0x4D97DCd97eC945f40CF65F87097ACe5EA0476045" # Example CTF Contract
-    
-    # ML & Scoring
-    ANOMALY_THRESHOLD: float = 80.0
-    
-    # Notifications
-    WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "") # Discord or Telegram
-    ALL_TRADES_WEBHOOK_URL: str = os.getenv("ALL_TRADES_WEBHOOK_URL", "") # Discord webhook for all trades
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    class Config:
-        env_file = ".env"
+    # Database (SQLite by default, Postgres via docker-compose)
+    DATABASE_URL: str = "sqlite:///polymarket_insider.db"
+
+    # Ingestion: Polymarket's public trades API, no key needed
+    TRADES_API_URL: str = "https://data-api.polymarket.com/trades"
+    POLL_INTERVAL_SECONDS: float = 5.0
+
+    # Scoring
+    ANOMALY_THRESHOLD: float = 60.0
+    LARGE_TRADE_USD: float = 10_000.0
+
+    # Isolation Forest retraining
+    MIN_TRAINING_TRADES: int = 1_000
+    RETRAIN_INTERVAL_SECONDS: int = 3_600
+
+    # Notifications (Discord webhooks, optional)
+    WEBHOOK_URL: str = ""
+    ALL_TRADES_WEBHOOK_URL: str = ""
+
 
 settings = Settings()
