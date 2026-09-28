@@ -1,26 +1,19 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Set working directory
+COPY --from=ghcr.io/astral-sh/uv:0.11.26 /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install locked dependencies first so this layer is cached between code changes
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
-# Install python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy source code
 COPY . .
 
-# Set Python path
-ENV PYTHONPATH=/app
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 
-# Make the start script executable
 RUN chmod +x start.sh
 
-# Command to run both the API and the Worker
+# Runs the monitor in the background and the API in the foreground
 CMD ["./start.sh"]
